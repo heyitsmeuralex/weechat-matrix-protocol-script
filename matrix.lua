@@ -2378,6 +2378,7 @@ function Room:ParseChunk(chunk, backlog, chunktype)
             url = url:gsub('mxc://',
                 w.config_get_plugin('homeserver_url')
                 .. '_matrix/media/v1/download/')
+            url = urllib.quote(url)
             -- Synapse homeserver supports arbitrary file endings, so we put
             -- filename at the end to make it nicer for URL "sniffers" to
             -- realise it's a image URL
@@ -2388,6 +2389,7 @@ function Room:ParseChunk(chunk, backlog, chunktype)
             url = url:gsub('mxc://',
                 w.config_get_plugin('homeserver_url')
                 .. '_matrix/media/v1/download/')
+            url = urllib.quote(url)
             body = 'File upload: ' ..
                    tostring(content['body'])
                    .. ' ' .. url
@@ -2428,6 +2430,7 @@ function Room:ParseChunk(chunk, backlog, chunktype)
                 url = url:gsub('mxc://',
                     w.config_get_plugin('homeserver_url')
                     .. '_matrix/media/v1/download/')
+                url = urllib.quote(url)
                 body = content['body'] .. ' ' .. url
             end
             dbg {
