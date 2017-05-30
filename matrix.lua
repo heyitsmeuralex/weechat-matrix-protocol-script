@@ -356,7 +356,7 @@ local function get_diff_indices_from_string_x(x, y)
 end
 
 local function html_tag_to_weechat_attribute(tag)
-    -- TODO, deal with colors, lists, paragraphs, tables, preformatted text
+    -- TODO, deal with colors, lists, tables, preformatted text, contiguous tags
     -- Certain formattings, will never be accurate due to weechat limitations
     local attribute
     local adict = {
@@ -394,6 +394,10 @@ local function html_tag_to_weechat_attribute(tag)
         ["</blockquote>"] = "",
         ["<hr />"] = "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -",
         ["<br />"] = "\n",
+        ["<div>"] = "",
+        ["</div>"] = "\n",
+        ["<p>"] = "",
+        ["</p>"] = "\n",
     }
     attribute = adict[tag]
     if attribute then
