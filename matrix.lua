@@ -356,9 +356,9 @@ local function get_diff_indices_from_string_x(x, y)
 end
 
 local function html_tag_to_weechat_attribute(tag)
-    -- TODO, deal with colors, lists, tables, preformatted text, contiguous tags
+    -- TODO, deal with colors, lists, tables, preformatted text
     -- Certain formattings, will never be accurate due to weechat limitations
-    local attribute
+    local attribute = ""
     local adict = {
         ["<strong>"] = "bold",
         ["</strong>"] = "-bold",
@@ -399,16 +399,20 @@ local function html_tag_to_weechat_attribute(tag)
         ["<p>"] = "",
         ["</p>"] = "\n",
     }
-    attribute = adict[tag]
-    if attribute then
-        return w.color(attribute)
+    for s in string.gmatch(tag, "<.->") do
+        local attr
+        local t = "" .. s
+        attr = adict[t]
+        if attr then
+            attribute = attribute .. w.color(attr)
+        else
+            attr = tdict[t]
+            if attr then
+                attribute = attribute .. attr
+            end
+        end
     end
-    attribute = tdict[tag]
-    if attribute then
-        return attribute
-    else
-        return ""
-    end
+    return attribute
 end
 
 local function html_formatting_and_body_to_weechat_color(html_body, unformatted_body)
