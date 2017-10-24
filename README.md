@@ -20,6 +20,16 @@ Matrix is a new open source realtime federated chat protocol. You can read more 
 
 ![weechat glowing bear](https://hveem.no/ss/weechat-matrix-gb.png)
 
+## Features
+
+In addition to receive and send messages, the script provides the following features:
+
+* marking room as read in both way (WeeChat to Matrix and vice versa)
+* uploading files
+* joining existing room
+* creating new room for queries
+* …
+
 ## How to load and use the plugin
 
 ```bash
