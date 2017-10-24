@@ -24,10 +24,10 @@ Matrix is a new open source realtime federated chat protocol. You can read more 
 
 In addition to receive and send messages, the script provides the following features:
 
-* marking room as read in both way (WeeChat to Matrix and vice versa)
-* uploading files
 * joining existing room
-* creating new room for queries
+* creating new room
+* uploading files
+* marking room as read in both way (WeeChat to Matrix and vice versa)
 * …
 
 ## How to load and use the plugin
