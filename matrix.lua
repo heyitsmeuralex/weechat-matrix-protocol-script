@@ -73,6 +73,8 @@ local POLL_INTERVAL = 55
 -- Floating values like 0.4 should work too.
 local timeout = 5*1000 -- overriden by w.config_get_plugin later
 
+local current_buffer
+
 local default_color = w.color('default')
 -- Cache error variables so we don't have to look them up for every error
 -- message, a normal user will not change these ever anyway.
@@ -249,8 +251,8 @@ local function irc_formatting_to_html(s)
         'orange','yellow','lightgreen','teal','cyan', 'lightblue',
         'fuchsia', 'gray', 'lightgray'}
 
-    s = byte_to_tag(s, '\02', '<em>', '</em>')
-    s = byte_to_tag(s, '\029', '<i>', '</i>')
+    s = byte_to_tag(s, '\02', '<strong>', '</strong>')
+    s = byte_to_tag(s, '\029', '<em>', '</em>')
     s = byte_to_tag(s, '\031', '<u>', '</u>')
     -- First do full color strings with reset.
     -- Iterate backwards to catch long colors before short
@@ -413,12 +415,16 @@ function matrix_away_command_run_cb(data, buffer, args)
 end
 
 function configuration_changed_cb(data, option, value)
-    if value == 'on' then
-        DEBUG = true
-        w.print('', SCRIPT_NAME..': debugging messages enabled')
-    else
-        DEBUG = false
-        w.print('', SCRIPT_NAME..': debugging messages disabled')
+    if option == 'plugins.var.lua.matrix.timeout' then
+        timeout = tonumber(value)*1000
+    elseif option == 'plugins.var.lua.matrix.debug' then 
+        if value == 'on' then
+            DEBUG = true
+            w.print('', SCRIPT_NAME..': debugging messages enabled')
+        else
+            DEBUG = false
+            w.print('', SCRIPT_NAME..': debugging messages disabled')
+        end
     end
 end
 
@@ -1599,7 +1605,7 @@ function MatrixServer:Upload(room_id, filename)
     local url = w.config_get_plugin('homeserver_url') ..
         ('_matrix/media/r0/upload?access_token=%s')
         :format( urllib.quote(SERVER.access_token) )
-    w.hook_process_hashtable('/usr/bin/curl', {
+    w.hook_process_hashtable('curl', {
         arg1 = '--data-binary', -- no encoding of data
         arg2 = '@'..filename, -- @means curl will load the filename
         arg3 = '-XPOST', -- HTTP POST method
@@ -2524,20 +2530,24 @@ function Room:ParseChunk(chunk, backlog, chunktype)
             if prev_content
                     and prev_content.membership == 'join'
                     and chunktype == 'messages' then
+                local nick = chunk.content.displayname or sender
+                if not nick or nick == json.null or nick == '' then
+                    nick = sender
+                end
                 local oldnick = prev_content.displayname
                 if not oldnick or oldnick == json.null then
                     oldnick = sender
-                else
-                    if oldnick == name then
-                        -- Maybe they changed their avatar or something else
-                        -- that we don't care about (or multiple joins)
-                        return
-                    end
-                    if not backlog then
-                        self:delNick(sender)
-                        self:addNick(sender, chunk.content.displayname)
-                    end
                 end
+
+                if oldnick == nick then
+                    -- Maybe they changed their avatar or something else
+                    -- that we don't care about (or multiple joins)
+                    return
+                end
+
+                self:delNick(sender)
+                self:addNick(sender, nick)
+
                 local pcolor = wcolor'weechat.color.chat_prefix_network'
                 tag'irc_nick'
                 local data = ('%s--\t%s%s%s is now known as %s%s'):format(
@@ -2546,7 +2556,7 @@ function Room:ParseChunk(chunk, backlog, chunktype)
                     oldnick,
                     default_color,
                     w.info_get('irc_nick_color', name),
-                    name)
+                    nick)
                 w.print_date_tags(self.buffer, time_int, tags(), data)
             elseif chunktype == 'messages' then
                 tag"irc_smart_filter"
@@ -2704,7 +2714,7 @@ function Room:ParseChunk(chunk, backlog, chunktype)
     -- luacheck: ignore 542
     elseif chunk['type'] == 'm.receipt' then
         -- TODO: figure out if we can do something sensible with read receipts
-    elseif chunk['type'] == 'm.fully_read' and self.buffer ~= w.current_buffer() then
+    elseif chunk['type'] == 'm.fully_read' and self.buffer ~= current_buffer then
         -- we don't want to update read line for the current buffer
         -- TODO: check if read marker correspond to the last event in the room
         w.buffer_set(self.buffer, "unread", "")
@@ -3296,10 +3306,17 @@ function typing_notification_cb(signal, sig_type, data)
     return w.WEECHAT_RC_OK
 end
 
-function buffer_switch_cb(signal, sig_type, data)
+function buffer_switch_cb(data, signal, sig_type)
     -- Update bar item
     w.bar_item_update('matrix_typing_notice')
-    local current_buffer = w.current_buffer()
+    if current_buffer then
+        local room = SERVER:findRoom(current_buffer)
+        if room then
+            room:MarkAsRead()
+        end
+    end
+
+    current_buffer = w.current_buffer()
     local room = SERVER:findRoom(current_buffer)
     if room then
         room:MarkAsRead()
@@ -3308,7 +3325,6 @@ function buffer_switch_cb(signal, sig_type, data)
 end
 
 function typing_bar_item_cb(data, buffer, args)
-    local current_buffer = w.current_buffer()
     local room = SERVER:findRoom(current_buffer)
     if not room then return '' end
     local typing_ids = table.concat(room.typing_ids, ' ')
@@ -3370,6 +3386,7 @@ if w.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, SCRIPT
     end
 
     w.hook_config('plugins.var.lua.matrix.debug', 'configuration_changed_cb', '')
+    w.hook_config('plugins.var.lua.matrix.timeout', 'configuration_changed_cb', '')
 
     local cmds = {'help', 'connect', 'debug', 'msg'}
     w.hook_command(SCRIPT_COMMAND, 'Plugin for matrix.org chat protocol',
