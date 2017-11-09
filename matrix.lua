@@ -1957,6 +1957,9 @@ function Room:addNick(user_id, displayname)
         or displayname:match'^%s+$' then
         displayname = user_id:match('@(.*):.+')
     end
+    if w.config_get_plugin('hide_irc_nick_tag') == 'on' then
+        displayname = displayname:gsub('%s*%(IRC%)$', '')
+    end
     if not self.users[user_id] then
         self.member_count = self.member_count + 1
         newnick = true
@@ -2079,6 +2082,9 @@ end
 function Room:UpdateNick(user_id, key, val)
     local nick = self.users[user_id]
     if not nick then return end
+    if w.config_get_plugin('hide_irc_nick_tag') == 'on' then
+        nick = nick:gsub('%s*%(IRC%)$', '')
+    end
     local nick_ptr = w.nicklist_search_nick(self.buffer, '', nick)
 
     if nick_ptr ~= '' and key and val then
@@ -2186,6 +2192,9 @@ function Room:formatNick(user_id)
     end
     -- Remove nasty white space
     nick = nick:gsub('[\n\t]', '')
+    if w.config_get_plugin('hide_irc_nick_tag') == 'on' then
+        nick = nick:gsub('%s*%(IRC%)$', '')
+    end
     local color
     if user_id == SERVER.user_id then
         color = w.color('chat_nick_self')
@@ -3326,6 +3335,7 @@ if w.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, SCRIPT
         encrypted_message_color = {'lightgreen', 'Print encrypted mesages with this color'},
         --olm_secret = {'', 'Password used to secure olm stores'},
         timeout = {'5', 'Time in seconds until a connection is assumed to be timed out'},
+        hide_irc_nick_tag = {'off', 'Hide (IRC) nick tags that some IRC bridges add to nicks on the IRC server'},
     }
     -- set default settings
     for option, value in pairs(settings) do
