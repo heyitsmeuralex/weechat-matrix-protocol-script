@@ -1754,7 +1754,7 @@ function Room:SetName(name)
         if short_name then
             name = short_name
         end
-    elseif self.aliases then
+    elseif self.aliases and self.aliases[1] ~= nil then
         local alias = self.aliases[1]
         if name then
             local _
