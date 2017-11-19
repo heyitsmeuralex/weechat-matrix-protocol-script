@@ -38,7 +38,6 @@ This script maps this as follows:
  Fix broken state after failed initial connect
  Fix parsing of multiple join messages
  Friendlier error message on bad user/password
- Parse some HTML and turn into color/bold/etc
  Support weechat.look.prefix_same_nick
 
 ]]
@@ -301,6 +300,138 @@ local function irc_formatting_to_weechat_color(s)
             w.color("|"..i), w.color("-"..i))
     end
     return s
+end
+
+local function get_diff_indices_from_string_x(x, y)
+    -- For html_formatting_and_body_to_weechat_color to extract HTML tags
+    -- Returns a table filled with a start and end index pair for each tag
+    local m = x:len()
+    local n = y:len()
+    local start = 0
+    local memo = {}
+    -- Trim common leading characters, for extra speed
+    while start < m and start < n
+            and x:sub(start+1, start+1) == y:sub(start+1, start+1) do
+        start = start + 1
+    end
+    for i = start, m + 1 do
+        memo[i] = {}
+        for j = start, n + 1 do
+            memo[i][j] = -1
+        end
+    end
+    -- Determine length of the LCS
+    for i = start, m + 1 do
+        for j = start, n + 1 do
+            if i == start or j == start then
+                memo[i][j] = 0
+            elseif x:sub(i,i) == y:sub(j,j) then
+                memo[i][j] = memo[i-1][j-1] + 1
+            else
+                memo[i][j] = math.max(memo[i-1][j], memo[i][j-1])
+            end
+        end
+    end
+    -- Work through the memo table to get the different parts in x
+    local indices = {}
+    while m > start or n > start do
+        if x:sub(m, m) == y:sub(n, n) then
+            m = m - 1
+            n = n - 1
+        elseif n > start and (m == start or memo[m][n-1] > memo[m-1][n]) then
+            n = n - 1
+        else
+            table.insert(indices, m)
+            m = m - 1
+        end
+    end
+    -- Filter out middle characters to only store start/end indices of each tag
+    local paired_indices = {}
+    local q = 1
+    table.sort(indices)
+    while q < #indices do
+        local r = 1
+        while (q + r <= #indices) and (indices[q + r] == indices[q] + r) do
+            r = r + 1
+        end
+        table.insert(paired_indices, indices[q])
+        table.insert(paired_indices, indices[q + r - 1])
+        q = q + r
+    end
+    return paired_indices
+end
+
+local function html_tag_to_weechat_attribute(tag)
+    -- TODO, deal with colors, lists, tables, preformatted text
+    -- Certain formattings, will never be accurate due to weechat limitations
+    local attribute = ""
+    local adict = {
+        ["<strong>"] = "bold",
+        ["</strong>"] = "-bold",
+        ["<b>"] = "bold",
+        ["</b>"] = "-bold",
+        ["<em>"] = "italic",
+        ["</em>"] = "-italic",
+        ["<i>"] = "italic",
+        ["</i>"] = "-italic",
+        ["<u>"] = "underline",
+        ["</u>"] = "-underline",
+        ["<h1>"] = "bold",
+        ["</h1>"] = "-bold",
+        ["<h2>"] = "bold",
+        ["</h2>"] = "-bold",
+        ["<h3>"] = "bold",
+        ["</h3>"] = "-bold",
+        ["<h4>"] = "bold",
+        ["</h4>"] = "-bold",
+        ["<h5>"] = "bold",
+        ["</h5>"] = "-bold",
+        ["<h6>"] = "bold",
+        ["</h6>"] = "-bold",
+    }
+    local tdict = {
+        ["<code>"] = "```",
+        ["</code>"] = "```",
+        ["<strike>"] = "~",
+        ["</strike>"] = "~",
+        ["<del>"] = "~",
+        ["</del>"] = "~",
+        ["<blockquote>"] = "> ",
+        ["</blockquote>"] = "",
+        ["<hr />"] = "- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -",
+        ["<br />"] = "\n",
+        ["<div>"] = "",
+        ["</div>"] = "\n",
+        ["<p>"] = "",
+        ["</p>"] = "\n",
+    }
+    for s in string.gmatch(tag, "<.->") do
+        local attr
+        local t = "" .. s
+        attr = adict[t]
+        if attr then
+            attribute = attribute .. w.color(attr)
+        else
+            attr = tdict[t]
+            if attr then
+                attribute = attribute .. attr
+            end
+        end
+    end
+    return attribute
+end
+
+local function html_formatting_and_body_to_weechat_color(html_body, unformatted_body)
+    local weechat_body = html_body
+    local diff_indices = get_diff_indices_from_string_x(html_body, unformatted_body)
+    for i = #diff_indices, 1, -2 do
+        local start = diff_indices[i-1]
+        local stop = diff_indices[i]
+        local weechat_attribute
+        weechat_attribute = html_tag_to_weechat_attribute(html_body:sub(start,stop))
+        weechat_body = html_body:sub(1, start-1) .. weechat_attribute .. weechat_body:sub(stop+1)
+    end
+    return weechat_body
 end
 
 function matrix_unload()
@@ -2405,10 +2536,11 @@ function Room:ParseChunk(chunk, backlog, chunktype)
 
         -- luacheck: ignore 542
         if content['msgtype'] == 'm.text' then
-            -- TODO
-            -- Parse HTML here:
-            -- content.format = 'org.matrix.custom.html'
-            -- fontent.formatted_body...
+            if content['format'] == 'org.matrix.custom.html'
+                    and w.config_get_plugin('html_formatting') == 'on' then
+                local html_body = content['formatted_body']
+                body = html_formatting_and_body_to_weechat_color(html_body, body)
+            end
         elseif content['msgtype'] == 'm.image' then
             local url = content['url']
             if type(url) ~= 'string' then
@@ -3350,6 +3482,7 @@ if w.register(SCRIPT_NAME, SCRIPT_AUTHOR, SCRIPT_VERSION, SCRIPT_LICENSE, SCRIPT
         autojoin_on_invite = {'on', 'Automatically join rooms you are invited to'},
         typing_notices = {'on', 'Send typing notices when you type'},
         local_echo = {'on', 'Print lines locally instead of waiting for return from server'},
+        html_formatting = {'off', 'When recieved messages have HTML formatting, use it if possible. Experimental'},
         debug = {'off', 'Print a lot of extra information to help with finding bugs and other problems.'},
         encrypted_message_color = {'lightgreen', 'Print encrypted mesages with this color'},
         --olm_secret = {'', 'Password used to secure olm stores'},
